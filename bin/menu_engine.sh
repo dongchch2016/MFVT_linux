@@ -55,14 +55,32 @@ show_system_menu() {
   local propfile="${1:-$MFVT_HOME/validator.properties}"; shift || true
   local logfile="${1:-$MFVT_HOME/logs/validator.log}"; shift || true
 
-  local fname="$MFVT_HOME/menus/${system// /_}.menu"
+  # Normalize system name to a safe filename (lowercase, spaces -> underscores)
+  local sys_basename="${system// /_}"
+  local sys_lower
+  sys_lower="$(echo "$sys_basename" | tr '[:upper:]' '[:lower:]')"
+
+  local fname="$MFVT_HOME/menus/${sys_lower}.menu"
+  # If a menu file exists with original capitalization, prefer it
+  if [ ! -f "$fname" ] && [ -f "$MFVT_HOME/menus/${sys_basename}.menu" ]; then
+    fname="$MFVT_HOME/menus/${sys_basename}.menu"
+  fi
+
   if [ ! -f "$fname" ]; then
-    # fallback to existing systems script if present
-    if [ -x "$MFVT_HOME/systems/${system// /_}.sh" ] || [ -f "$MFVT_HOME/systems/${system// /_}.sh" ]; then
+    # fallback to existing systems script if present (try lowercase then original)
+    if [ -x "$MFVT_HOME/systems/${sys_lower}.sh" ] || [ -f "$MFVT_HOME/systems/${sys_lower}.sh" ]; then
       # shellcheck source=/dev/null
-      . "$MFVT_HOME/systems/${system// /_}.sh"
-      local func="${system// /_}_menu"
+      . "$MFVT_HOME/systems/${sys_lower}.sh"
+      local func="${sys_lower}_menu"
       # call the menu function if defined
+      if type "$func" >/dev/null 2>&1; then
+        "$func" "$propfile" "$logfile"
+        return
+      fi
+    elif [ -x "$MFVT_HOME/systems/${sys_basename}.sh" ] || [ -f "$MFVT_HOME/systems/${sys_basename}.sh" ]; then
+      # shellcheck source=/dev/null
+      . "$MFVT_HOME/systems/${sys_basename}.sh"
+      local func="${sys_basename}_menu"
       if type "$func" >/dev/null 2>&1; then
         "$func" "$propfile" "$logfile"
         return
