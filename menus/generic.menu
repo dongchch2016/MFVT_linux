@@ -1,0 +1,5 @@
+# Generic system menu
+[Generic]
+genericValidateRecords:items=Validate Records
+genericCrossEntity=Cross-Entity Check
+genericReports=Generate Reports

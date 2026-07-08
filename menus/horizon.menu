@@ -1,0 +1,12 @@
+# Horizon menu definition
+[Inventory]
+horizonValidateMarcBib:marcBib=MARC Bib
+horizonValidateMarcHolding:marcHolding=MARC Holding
+horizonValidateItems:items=Items
+
+[Fulfillment]
+horizonValidatePatrons:patrons=Patrons
+horizonValidateLoans:loans=Loans
+
+[Acquisition]
+horizonValidateVendors:vendors=Vendors

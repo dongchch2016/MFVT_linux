@@ -1,0 +1,9 @@
+# Talis Alto menu definition
+[Inventory]
+talisValidateMarcBib:marcBib=MARC Bib
+talisValidateMarcHolding:marcHolding=MARC Holding
+talisValidateItems:items=Items
+
+[Fulfillment]
+talisValidatePatrons:patrons=Patrons
+talisValidateLoans:loans=Loans

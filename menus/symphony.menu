@@ -1,0 +1,15 @@
+# Symphony menu definition
+[Inventory]
+symphonyValidateMarcBib:marcBib=MARC Bib
+symphonyValidateMarcHolding:marcHolding=MARC Holding
+symphonyValidateItems:items=Items
+
+[Fulfillment]
+symphonyValidatePatrons:patrons=Patrons
+symphonyValidateLoans:loans=Loans
+symphonyValidateRequests=Requests
+
+[Acquisition]
+symphonyValidateVendors:vendors=Vendors
+symphonyValidateOrders=Orders
+symphonyValidateFunds=Funds

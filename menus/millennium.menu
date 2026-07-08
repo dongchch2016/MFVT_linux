@@ -1,0 +1,32 @@
+# Millennium menu definition
+[Inventory]
+validateMarcBib:marcBib=MARC Bib
+validateMarcHolding:marcHolding=MARC Holding
+validateItems:items=Items
+validateSerHoldingsCheckins=Ser Holdings Checkins
+
+[Fulfillment]
+validatePatrons:patrons=Patrons
+validateLoans:loans=Loans
+validateRequests=Requests
+validateCourses=Courses
+validateFinesFees=Fines & Fees
+
+[Acquisition]
+validateVendors:vendors=Vendors
+validateOrders=Orders
+validateFunds=Funds
+validateOrderPayments=Order Payments
+validateInvoices=Invoices
+validateInvoiceLines=Invoice Lines
+
+[Optional]
+validateHOLFromBib=HOL From Bib
+validateSuppressedBibs=Suppressed Bibs
+validateItemSecondaryFile=Item Secondary File
+validateP2E=P2E
+validate360Files=360 Files
+
+[Cross Entity]
+validateBibItemHolding=Bib-Item-Holding
+validateCrossEntityFulfillment=Fulfillment

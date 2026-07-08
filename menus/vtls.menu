@@ -1,0 +1,8 @@
+# VTLS menu definition
+[Inventory]
+vtlsValidateMarcBib:marcBib=MARC Bib
+vtlsValidateMarcHolding:marcHolding=MARC Holding
+vtlsValidateItems:items=Items
+
+[Fulfillment]
+vtlsValidatePatrons:patrons=Patrons
