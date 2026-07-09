@@ -26,7 +26,7 @@ main_menu() {
     echo "3) Field Mapping (current: ${PROP_FIELD_MAPPING:-<none>})"
     echo "4) Default Formats"
     echo "5) Entity Validation (open selected system menu)"
-    echo "6) Run Validation (run all configured entities)"
+    echo "6) Run Validation (run last-selection)"
     echo "7) View Properties"
     echo "8) Set Input File Paths"
     echo "9) View Logs"
@@ -55,8 +55,8 @@ main_menu() {
         read -r -p "Run full validation for all entities now? [Y/n] " runans
         case "$runans" in
           ""|[yY]|[yY][eE][sS])
-            # call Java wrapper to run all validations; java.sh will pass logPath
-            run_java "runAll" "$propfile"
+            # call Java wrapper with only the properties file; Java reads all params from it
+            run_java "$propfile"
             ;;
           *)
             echo "Cancelled."
@@ -177,101 +177,4 @@ set_input_file_paths() {
     fi
   done
   echo "File paths updated in $file"
-}
-
-# Allow operator to view recent logs from the configured log directory
-view_logs() {
-  local propfile="$1"; shift
-  local logfile="$1"; shift || true
-
-  local logdir
-  logdir="$(dirname "$logfile")"
-  if [ ! -d "$logdir" ]; then
-    logdir="$MFVT_HOME/logs"
-  fi
-
-  echo "Logs directory: $logdir"
-  # gather files sorted by modification time
-  mapfile -t files < <(ls -1t -- "$logdir" 2>/dev/null || true)
-  if [ ${#files[@]} -eq 0 ]; then
-    echo "No log files found in $logdir"
-    pause
-    return
-  fi
-
-  while true; do
-    echo
-    echo "Recent log files:"
-    for i in "${!files[@]}"; do
-      idx=$((i+1))
-      printf "%2d) %s\n" "$idx" "${files[$i]}"
-    done
-    echo " 0) Back"
-    read -r -p "Choose a log file to view (or 0 to return): " choice
-
-    if [[ ! "$choice" =~ ^[0-9]+$ ]]; then
-      echo "Invalid choice"
-      pause
-      return
-    fi
-    if [ "$choice" -eq 0 ]; then
-      return
-    fi
-    if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#files[@]}" ]; then
-      echo "Choice out of range"
-      pause
-      return
-    fi
-
-    local sel_index=$((choice - 1))
-    local sel_file="${files[$sel_index]}"
-    local sel_path="$logdir/$sel_file"
-
-    if [ ! -f "$sel_path" ]; then
-      echo "Selected file not found: $sel_path"
-      pause
-      return
-    fi
-
-    # Offer viewing options: once (less), follow (tail -f), or back
-    echo
-    echo "Viewing options for $sel_file:"
-    echo " 1) Open once"
-    echo " 2) Follow (tail -f)"
-    echo " 3) Back to log list"
-    read -r -p "Choose: [1] " view_choice
-    view_choice="${view_choice:-1}"
-
-    case "$view_choice" in
-      1)
-        if command -v less >/dev/null 2>&1; then
-          less -R "$sel_path"
-        elif command -v more >/dev/null 2>&1; then
-          more "$sel_path"
-        else
-          tail -n 500 "$sel_path"
-          echo "(end of tail output)"
-          read -r -p "Press Enter to continue..." _
-        fi
-        ;;
-      2)
-        echo "Following $sel_path (press Ctrl-C to stop)"
-        tail -f "$sel_path" || true
-        ;;
-      3)
-        # go back to file list
-        continue
-        ;;
-      *)
-        echo "Invalid choice"
-        ;;
-    esac
-
-    # After viewing, ask whether to return to the file list or exit to main menu
-    read -r -p "Return to log list? [Y/n] " again
-    case "$again" in
-      [nN]|[nN][oO]) return ;;
-      *) ;;
-    esac
-  done
 }
