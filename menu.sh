@@ -29,6 +29,7 @@ main_menu() {
     echo "6) Run Validation (run last-selection)"
     echo "7) View Properties"
     echo "8) Set Input File Paths"
+    echo "9) View Logs"
     echo "0) Exit"
     echo
     read -r -p "Choose an option: " choice
@@ -62,6 +63,9 @@ main_menu() {
       8)
         set_input_file_paths "$propfile" "$logfile"
         load_properties "$propfile"
+        ;;
+      9)
+        view_logs "$propfile" "$logfile"
         ;;
       0)
         echo "Exiting."
@@ -164,4 +168,66 @@ set_input_file_paths() {
     fi
   done
   echo "File paths updated in $file"
+}
+
+# Allow operator to view recent logs from the configured log directory
+view_logs() {
+  local propfile="$1"; shift
+  local logfile="$1"; shift || true
+
+  local logdir
+  logdir="$(dirname "$logfile")"
+  if [ ! -d "$logdir" ]; then
+    logdir="$MFVT_HOME/logs"
+  fi
+
+  echo "Logs directory: $logdir"
+  # gather files sorted by modification time
+  mapfile -t files < <(ls -1t -- "$logdir" 2>/dev/null || true)
+  if [ ${#files[@]} -eq 0 ]; then
+    echo "No log files found in $logdir"
+    pause
+    return
+  fi
+
+  echo "Recent log files:"
+  for i in "${!files[@]}"; do
+    idx=$((i+1))
+    printf "%2d) %s\n" "$idx" "${files[$i]}"
+  done
+  echo " 0) Cancel"
+  read -r -p "Choose a log file to view: " choice
+  if [[ ! "$choice" =~ ^[0-9]+$ ]]; then
+    echo "Invalid choice"
+    pause
+    return
+  fi
+  if [ "$choice" -eq 0 ]; then
+    return
+  fi
+  if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#files[@]}" ]; then
+    echo "Choice out of range"
+    pause
+    return
+  fi
+  local sel_index=$((choice - 1))
+  local sel_file="${files[$sel_index]}"
+  local sel_path="$logdir/$sel_file"
+
+  if [ ! -f "$sel_path" ]; then
+    echo "Selected file not found: $sel_path"
+    pause
+    return
+  fi
+
+  if command -v less >/dev/null 2>&1; then
+    less -R "$sel_path"
+  elif command -v more >/dev/null 2>&1; then
+    more "$sel_path"
+  else
+    # fallback: show last 500 lines
+    tail -n 500 "$sel_path"
+    echo "(end of tail output)"
+    read -r -p "Press Enter to continue..." _
+  fi
 }
