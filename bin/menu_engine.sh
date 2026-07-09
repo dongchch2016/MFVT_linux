@@ -215,6 +215,45 @@ show_system_menu() {
       log_error "$logfile" "Validation FAILED (rc=$rc): $sel_label"
       echo "FAIL (rc=$rc)"
     fi
+
+    # Offer to open the most recent log file produced by the run
+    local logdir
+    logdir="$(dirname "$logfile")"
+    if [ ! -d "$logdir" ]; then
+      logdir="$MFVT_HOME/logs"
+    fi
+    local recent
+    recent="$(ls -1t -- "$logdir" 2>/dev/null | head -n1 || true)"
+    if [ -n "$recent" ]; then
+      read -r -p "Open most recent log ($recent)? [Y/n] " openans
+      case "$openans" in
+        [nN]|[nN][oO]) ;;
+        *)
+          local sel_path="$logdir/$recent"
+          if [ ! -f "$sel_path" ]; then
+            echo "Log file disappeared: $sel_path"
+          else
+            if command -v less >/dev/null 2>&1; then
+              less -R "$sel_path"
+            elif command -v more >/dev/null 2>&1; then
+              more "$sel_path"
+            else
+              tail -n 500 "$sel_path"
+              echo "(end of tail output)"
+              read -r -p "Press Enter to continue..." _
+            fi
+          fi
+          ;;
+      esac
+    fi
+
+    if [ $rc -eq 0 ]; then
+      log_info "$logfile" "Validation PASSED: $sel_label"
+      echo "PASS"
+    else
+      log_error "$logfile" "Validation FAILED (rc=$rc): $sel_label"
+      echo "FAIL (rc=$rc)"
+    fi
     pause
   done
 }
