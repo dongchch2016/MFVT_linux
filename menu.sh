@@ -190,44 +190,76 @@ view_logs() {
     return
   fi
 
-  echo "Recent log files:"
-  for i in "${!files[@]}"; do
-    idx=$((i+1))
-    printf "%2d) %s\n" "$idx" "${files[$i]}"
+  while true; do
+    echo "Recent log files:"
+    for i in "${!files[@]}"; do
+      idx=$((i+1))
+      printf "%2d) %s\n" "$idx" "${files[$i]}"
+    done
+    echo " 0) Cancel"
+
+    read -r -p "Choose a log file to view (or 0 to return): " choice
+    if [[ ! "$choice" =~ ^[0-9]+$ ]]; then
+      echo "Invalid choice"
+      pause
+      return
+    fi
+    if [ "$choice" -eq 0 ]; then
+      return
+    fi
+    if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#files[@]}" ]; then
+      echo "Choice out of range"
+      pause
+      return
+    fi
+
+    local sel_index=$((choice - 1))
+    local sel_file="${files[$sel_index]}"
+    local sel_path="$logdir/$sel_file"
+
+    if [ ! -f "$sel_path" ]; then
+      echo "Selected file not found: $sel_path"
+      pause
+      return
+    fi
+
+    # Offer viewing options: once (less), follow (tail -f), or back
+    echo "Viewing options for $sel_file:"
+    echo " 1) Open once"
+    echo " 2) Follow (tail -f)"
+    echo " 3) Back"
+    read -r -p "Choose: [1] " view_choice
+    view_choice="${view_choice:-1}"
+    case "$view_choice" in
+      1)
+        if command -v less >/dev/null 2>&1; then
+          less -R "$sel_path"
+        elif command -v more >/dev/null 2>&1; then
+          more "$sel_path"
+        else
+          tail -n 500 "$sel_path"
+          echo "(end of tail output)"
+          read -r -p "Press Enter to continue..." _
+        fi
+        ;;
+      2)
+        echo "Following $sel_path (press Ctrl-C to stop)"
+        tail -f "$sel_path" || true
+        ;;
+      3)
+        # go back to file list
+        continue
+        ;;
+      *)
+        echo "Invalid choice"
+        ;;
+    esac
+
+    # After viewing, ask whether to return to the file list or exit to main menu
+    read -r -p "Return to log list? [Y/n] " again
+    case "$again" in
+      [nN]|[nN][oO]) return ;;
+      *) ;;
+    esac
   done
-  echo " 0) Cancel"
-  read -r -p "Choose a log file to view: " choice
-  if [[ ! "$choice" =~ ^[0-9]+$ ]]; then
-    echo "Invalid choice"
-    pause
-    return
-  fi
-  if [ "$choice" -eq 0 ]; then
-    return
-  fi
-  if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#files[@]}" ]; then
-    echo "Choice out of range"
-    pause
-    return
-  fi
-  local sel_index=$((choice - 1))
-  local sel_file="${files[$sel_index]}"
-  local sel_path="$logdir/$sel_file"
-
-  if [ ! -f "$sel_path" ]; then
-    echo "Selected file not found: $sel_path"
-    pause
-    return
-  fi
-
-  if command -v less >/dev/null 2>&1; then
-    less -R "$sel_path"
-  elif command -v more >/dev/null 2>&1; then
-    more "$sel_path"
-  else
-    # fallback: show last 500 lines
-    tail -n 500 "$sel_path"
-    echo "(end of tail output)"
-    read -r -p "Press Enter to continue..." _
-  fi
 }
