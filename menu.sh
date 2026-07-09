@@ -191,14 +191,15 @@ view_logs() {
   fi
 
   while true; do
+    echo
     echo "Recent log files:"
     for i in "${!files[@]}"; do
       idx=$((i+1))
       printf "%2d) %s\n" "$idx" "${files[$i]}"
     done
-    echo " 0) Cancel"
-
+    echo " 0) Back"
     read -r -p "Choose a log file to view (or 0 to return): " choice
+
     if [[ ! "$choice" =~ ^[0-9]+$ ]]; then
       echo "Invalid choice"
       pause
@@ -223,13 +224,15 @@ view_logs() {
       return
     fi
 
-    # Offer viewing options: once (less), follow (tail -f), or back
+    # Viewing options: open once, follow, or back to list
+    echo
     echo "Viewing options for $sel_file:"
     echo " 1) Open once"
     echo " 2) Follow (tail -f)"
-    echo " 3) Back"
+    echo " 3) Back to log list"
     read -r -p "Choose: [1] " view_choice
     view_choice="${view_choice:-1}"
+
     case "$view_choice" in
       1)
         if command -v less >/dev/null 2>&1; then
