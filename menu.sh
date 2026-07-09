@@ -26,7 +26,7 @@ main_menu() {
     echo "3) Field Mapping (current: ${PROP_FIELD_MAPPING:-<none>})"
     echo "4) Default Formats"
     echo "5) Entity Validation (open selected system menu)"
-    echo "6) Run Validation (run last-selection)"
+    echo "6) Run Validation (run all configured entities)"
     echo "7) View Properties"
     echo "8) Set Input File Paths"
     echo "9) View Logs"
@@ -52,7 +52,16 @@ main_menu() {
         show_system_menu "$PROP_SYSTEM" "$propfile" "$logfile"
         ;;
       6)
-        echo "Run validation: choose system menu under option 5 and pick an entity to run."
+        read -r -p "Run full validation for all entities now? [Y/n] " runans
+        case "$runans" in
+          ""|[yY]|[yY][eE][sS])
+            # call Java wrapper to run all validations; java.sh will pass logPath
+            run_java "runAll" "$propfile"
+            ;;
+          *)
+            echo "Cancelled."
+            ;;
+        esac
         pause
         ;;
       7)
@@ -224,7 +233,7 @@ view_logs() {
       return
     fi
 
-    # Viewing options: open once, follow, or back to list
+    # Offer viewing options: once (less), follow (tail -f), or back
     echo
     echo "Viewing options for $sel_file:"
     echo " 1) Open once"
