@@ -5,6 +5,8 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.time.format.DateTimeFormatter;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -30,17 +32,55 @@ public class ValidatorMain {
             System.exit(2);
         }
 
-        // Configure logging from property log.file (exact logfile)
-        String logFilePath = props.getProperty("log.file", "./logs/validator.log");
-        File logFile = new File(logFilePath);
-        File parent = logFile.getParentFile();
-        if (parent != null && !parent.exists()) {
-            try {
-                Files.createDirectories(parent.toPath());
-            } catch (IOException ex) {
-                System.err.println("Failed to create log directory: " + ex.getMessage());
-                // continue, logger setup will attempt to open and may fail
+        // Determine logging destination.
+        // Preferred: log.dir -> create timestamped file inside this dir
+        // Fallback: log.file -> use exact path
+        // Final fallback: ./logs with timestamped filename
+        String logDirProp = props.getProperty("log.dir", null);
+        String logFileProp = props.getProperty("log.file", null);
+
+        File logFile = null;
+        if (logDirProp != null && !logDirProp.trim().isEmpty()) {
+            File logDir = new File(logDirProp);
+            if (!logDir.exists()) {
+                try {
+                    Files.createDirectories(logDir.toPath());
+                } catch (IOException ex) {
+                    System.err.println("Failed to create log directory: " + ex.getMessage());
+                    // fallback to other options
+                    logDir = null;
+                }
             }
+            if (logDirProp != null) {
+                String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+                logFile = new File(logDirProp, "validator_" + timestamp + ".log");
+            }
+        }
+
+        if (logFile == null && logFileProp != null && !logFileProp.trim().isEmpty()) {
+            logFile = new File(logFileProp);
+            File parent = logFile.getParentFile();
+            if (parent != null && !parent.exists()) {
+                try {
+                    Files.createDirectories(parent.toPath());
+                } catch (IOException ex) {
+                    System.err.println("Failed to create parent directory for log.file: " + ex.getMessage());
+                }
+            }
+        }
+
+        if (logFile == null) {
+            // final fallback to ./logs with timestamp
+            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+            File fallbackDir = new File("./logs");
+            if (!fallbackDir.exists()) {
+                try {
+                    Files.createDirectories(fallbackDir.toPath());
+                } catch (IOException ex) {
+                    // ignore
+                }
+            }
+            logFile = new File(fallbackDir, "validator_" + timestamp + ".log");
         }
 
         try {
@@ -53,6 +93,8 @@ public class ValidatorMain {
             logger = Logger.getLogger("MFVTValidator");
             logger.severe("Proceeding with console-only logging because file logger failed.");
         }
+
+        logger.info("Logging to: " + logFile.getAbsolutePath());
 
         // Known entity property keys (ordered)
         Map<String, String> entities = new LinkedHashMap<>();
