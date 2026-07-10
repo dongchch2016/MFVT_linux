@@ -12,6 +12,19 @@ set -euo pipefail
 # shellcheck source=/dev/null
 . "$MFVT_HOME/bin/menu_engine.sh"
 
+# set_property helper (append or replace)
+set_property() {
+  local file="$1"; shift
+  local key="$1"; shift
+  local value="$*"
+  if grep -qE "^\s*${key//./\\\.}\s*=" "$file"; then
+    # replace existing
+    sed -i.bak -E "s|^\s*${key//./\\\.}\s*=.*$|${key}=${value}|" "$file"
+  else
+    echo "${key}=${value}" >>"$file"
+  fi
+}
+
 main_menu() {
   local propfile="${1:-$MFVT_HOME/validator.properties}"
   local logfile="${2:-$MFVT_HOME/logs/validator.log}"
@@ -363,13 +376,13 @@ view_logs() {
     if [ "$choice" -eq 0 ]; then
       return
     fi
-    if [ "$choice" -lt 1 ] || [ "$choice" -gt "$[${#files[@]}]" ]; then
+    if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#files[@]}" ]; then
       echo "Choice out of range"
       pause
       return
     fi
 
-    local sel_index $((choice - 1))
+    local sel_index=$((choice - 1))
     local sel_file="${files[$sel_index]}"
     local sel_path="$logdir/$sel_file"
 
