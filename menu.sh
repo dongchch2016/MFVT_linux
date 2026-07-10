@@ -230,7 +230,7 @@ set_input_file_paths() {
   local -a uniq_keys=()
   for k in "${keys[@]}"; do
     local found=0
-    for u in "${uniq_keys[@]}"; do
+    for u in "${uniq_keys[@]:-}"; do
       if [ "$u" = "$k" ]; then
         found=1
         break
