@@ -164,10 +164,91 @@ set_property() {
 set_input_file_paths() {
   local file="$1"; shift
   local logfile="$1"; shift || true
-  # List of property keys to prompt for (extend as needed)
-  local keys=(marcBib marcHolding items patrons loans vendors)
-  echo "Enter file paths for the following entities (leave blank to keep current):"
+
+  # Attempt to derive the entity keys from the selected system's menu file
+  local system
+  system="$(get_property "$file" system)"
+  # if not set in properties, fall back to current runtime selection
+  if [ -z "$system" ]; then
+    system="$PROP_SYSTEM"
+  fi
+
+  if [ -z "$system" ]; then
+    echo "No system selected. Please select a system first." 
+    pause
+    return
+  fi
+
+  # Normalize system name to match menu filenames
+  local sys_basename="${system// /_}"
+  local sys_lower
+  sys_lower="$(echo "$sys_basename" | tr '[:upper:]' '[:lower:]')"
+
+  local fname="$MFVT_HOME/menus/${sys_lower}.menu"
+  if [ ! -f "$fname" ] && [ -f "$MFVT_HOME/menus/${sys_basename}.menu" ]; then
+    fname="$MFVT_HOME/menus/${sys_basename}.menu"
+  fi
+
+  local -a keys=()
+
+  if [ -f "$fname" ]; then
+    # Parse menu file for key[:inputProp]=Label entries and collect input props
+    while IFS= read -r line || [ -n "$line" ]; do
+      # Trim whitespace
+      line="$(echo "$line" | sed -e 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+      [ -z "$line" ] && continue
+      case "$line" in
+        \#*) continue ;;
+        \[*\]) continue ;;
+        *=*)
+          local key_part
+          key_part="${line%%=*}"
+          if [[ "$key_part" == *":"* ]]; then
+            local input_prop
+            input_prop="${key_part#*:}"
+            if [ -n "$input_prop" ]; then
+              keys+=("$input_prop")
+            fi
+          else
+            # No explicit input prop; infer from command name
+            local inferred
+            inferred="$(infer_input_key_from_cmd "$key_part")"
+            if [ -n "$inferred" ]; then
+              keys+=("$inferred")
+            fi
+          fi
+          ;;
+        *) continue ;;
+      esac
+    done <"$fname"
+  else
+    # fallback to a default set if no menu file is found
+    keys=(marcBib marcHolding items patrons loans vendors)
+  fi
+
+  # Deduplicate keys while preserving order
+  local -a uniq_keys=()
   for k in "${keys[@]}"; do
+    local found=0
+    for u in "${uniq_keys[@]}"; do
+      if [ "$u" = "$k" ]; then
+        found=1
+        break
+      fi
+    done
+    if [ $found -eq 0 ] && [ -n "$k" ]; then
+      uniq_keys+=("$k")
+    fi
+  done
+
+  if [ ${#uniq_keys[@]} -eq 0 ]; then
+    echo "No entity input properties could be derived for system $system"
+    pause
+    return
+  fi
+
+  echo "Enter file paths for the following entities (leave blank to keep current):"
+  for k in "${uniq_keys[@]}"; do
     local cur
     cur="$(get_property "$file" "$k" "")"
     read -r -p "${k} (current: ${cur:-<none>}): " val
@@ -176,5 +257,103 @@ set_input_file_paths() {
       log_info "$logfile" "Set $k = $val"
     fi
   done
+
   echo "File paths updated in $file"
+}
+
+# Allow operator to view recent logs from the configured log directory
+view_logs() {
+  local propfile="$1"; shift
+  local logfile="$1"; shift || true
+
+  local logdir
+  logdir="$(dirname "$logfile")"
+  if [ ! -d "$logdir" ]; then
+    logdir="$MFVT_HOME/logs"
+  fi
+
+  echo "Logs directory: $logdir"
+  # gather files sorted by modification time
+  mapfile -t files < <(ls -1t -- "$logdir" 2>/dev/null || true)
+  if [ ${#files[@]} -eq 0 ]; then
+    echo "No log files found in $logdir"
+    pause
+    return
+  fi
+
+  while true; do
+    echo
+    echo "Recent log files:"
+    for i in "${!files[@]}"; do
+      idx=$((i+1))
+      printf "%2d) %s\n" "$idx" "${files[$i]}"
+    done
+    echo " 0) Back"
+    read -r -p "Choose a log file to view (or 0 to return): " choice
+
+    if [[ ! "$choice" =~ ^[0-9]+$ ]]; then
+      echo "Invalid choice"
+      pause
+      return
+    fi
+    if [ "$choice" -eq 0 ]; then
+      return
+    fi
+    if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#files[@]}" ]; then
+      echo "Choice out of range"
+      pause
+      return
+    fi
+
+    local sel_index=$((choice - 1))
+    local sel_file="${files[$sel_index]}"
+    local sel_path="$logdir/$sel_file"
+
+    if [ ! -f "$sel_path" ]; then
+      echo "Selected file not found: $sel_path"
+      pause
+      return
+    fi
+
+    # Viewing options: open once, follow, or back to list
+    echo
+    echo "Viewing options for $sel_file:"
+    echo " 1) Open once"
+    echo " 2) Follow (tail -f)"
+    echo " 3) Back to log list"
+    read -r -p "Choose: [1] " view_choice
+    view_choice="${view_choice:-1}"
+
+    case "$view_choice" in
+      1)
+        if command -v less >/dev/null 2>&1; then
+          less -R "$sel_path"
+        elif command -v more >/dev/null 2>&1; then
+          more "$sel_path"
+        else
+          tail -n 500 "$sel_path"
+          echo "(end of tail output)"
+          read -r -p "Press Enter to continue..." _
+        fi
+        ;;
+      2)
+        echo "Following $sel_path (press Ctrl-C to stop)"
+        tail -f "$sel_path" || true
+        ;;
+      3)
+        # go back to file list
+        continue
+        ;;
+      *)
+        echo "Invalid choice"
+        ;;
+    esac
+
+    # After viewing, let operator choose to return to the list or exit to main menu
+    read -r -p "Return to log list? [Y/n] " again
+    case "$again" in
+      [nN]|[nN][oO]) return ;;
+      *) ;;
+    esac
+  done
 }
