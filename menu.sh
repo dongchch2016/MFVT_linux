@@ -111,6 +111,20 @@ select_system_menu() {
   esac
   log_info "$logfile" "System set to $(get_property "$propfile" system)"
 
+  # Diagnostic: report the properties file path and create a backup before modifying
+  if [ -n "${propfile:-}" ]; then
+    echo "DEBUG: properties file path: $propfile" >&2
+    # create a timestamped backup copy (best-effort)
+    if [ -f "$propfile" ]; then
+      cp -a "$propfile" "${propfile}.bak.$(date +%s)" 2>/dev/null || true
+      echo "DEBUG: backup created: ${propfile}.bak.$(date +%s)" >&2
+    else
+      echo "DEBUG: properties file does not exist yet: $propfile" >&2
+      # touch to ensure file exists for later append operations
+      touch "$propfile" 2>/dev/null || true
+    fi
+  fi
+
   # Option A: when a system is selected, ensure validator.properties contains
   # the input property keys used by that system's menu. Do not overwrite existing values.
   local system_val
@@ -123,6 +137,8 @@ select_system_menu() {
   if [ ! -f "$fname" ] && [ -f "$MFVT_HOME/menus/${sys_basename}.menu" ]; then
     fname="$MFVT_HOME/menus/${sys_basename}.menu"
   fi
+
+  echo "DEBUG: looking for menu file at: $fname" >&2
 
   local -a keys=()
   if [ -f "$fname" ]; then
@@ -171,11 +187,16 @@ select_system_menu() {
     fi
   done
 
+  echo "DEBUG: derived properties to ensure: ${uniq_keys[*]:-<none>}" >&2
+
   # Add missing keys to the properties file with empty values (do not overwrite existing)
   for k in "${uniq_keys[@]}"; do
     if ! grep -qE "^\s*${k//./\\\.}\s*=" "$propfile"; then
       echo "${k}=" >>"$propfile"
+      echo "DEBUG: appended ${k}= to $propfile" >&2
       log_info "$logfile" "Added property $k= for system $system_val"
+    else
+      echo "DEBUG: property $k already present in $propfile" >&2
     fi
   done
 }
@@ -291,7 +312,7 @@ view_logs() {
       return
     fi
 
-    local sel_index=$((choice - 1))
+    local sel_index $((choice - 1))
     local sel_file="${files[$sel_index]}"
     local sel_path="$logdir/$sel_file"
 
