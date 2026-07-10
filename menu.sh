@@ -201,71 +201,128 @@ select_system_menu() {
   done
 }
 
-edit_migration_form() {
-  local propfile="$1"; local logfile="$2"
-  echo "Current migration form: $(get_property "$propfile" migration.form)"
-  read -r -p "Enter path to migration form (or leave blank to cancel): " p
-  if [ -n "$p" ]; then
-    set_property "$propfile" "migration.form" "$p"
-    log_info "$logfile" "Migration form set to $p"
-  fi
-}
-
-edit_field_mapping() {
-  local propfile="$1"; local logfile="$2"
-  echo "Current field mapping form: $(get_property "$propfile" field.mapping.form)"
-  read -r -p "Enter path to field mapping form (or leave blank to cancel): " p
-  if [ -n "$p" ]; then
-    set_property "$propfile" "field.mapping.form" "$p"
-    log_info "$logfile" "Field mapping form set to $p"
-  fi
-}
-
-configure_formats() {
-  local propfile="$1"; local logfile="$2"
-  echo "Date format: $(get_property "$propfile" date.format)"
-  read -r -p "Enter date format (or leave blank): " d
-  if [ -n "$d" ]; then
-    set_property "$propfile" "date.format" "$d"
-  fi
-  echo "Price format: $(get_property "$propfile" price.format)"
-  read -r -p "Enter price format (or leave blank): " pf
-  if [ -n "$pf" ]; then
-    set_property "$propfile" "price.format" "$pf"
-  fi
-  log_info "$logfile" "Formats updated"
-}
-
-# set_property helper (append or replace)
-set_property() {
-  local file="$1"; shift
-  local key="$1"; shift
-  local value="$*"
-  if grep -qE "^\s*${key//./\\\.}\s*=" "$file"; then
-    # replace existing
-    sed -i.bak -E "s|^\s*${key//./\\\.}\s*=.*$|${key}=${value}|" "$file"
-  else
-    echo "${key}=${value}" >>"$file"
-  fi
-}
-
-# Prompt operator to input file paths for known entities and save them to properties
+# Prompt operator to input file paths for entities defined by the selected system's .entities file
 set_input_file_paths() {
-  local file="$1"; shift
+  local propfile="$1"; shift
   local logfile="$1"; shift || true
-  # List of property keys to prompt for (extend as needed)
-  local keys=(marcBib marcHolding items patrons loans vendors)
-  echo "Enter file paths for the following entities (leave blank to keep current):"
+
+  # Resolve selected system (from properties or runtime)
+  local system
+  system="$(get_property "$propfile" system)"
+  if [ -z "$system" ]; then
+    system="$PROP_SYSTEM"
+  fi
+  if [ -z "$system" ]; then
+    echo "No system selected. Please select a system first."
+    pause
+    return
+  fi
+
+  # Build candidate .entities filenames
+  local sys_basename="${system// /_}"
+  local sys_lower
+  sys_lower="$(echo "$sys_basename" | tr '[:upper:]' '[:lower:]')"
+
+  local entities_file="$MFVT_HOME/menus/${sys_lower}.entities"
+  if [ ! -f "$entities_file" ] && [ -f "$MFVT_HOME/menus/${sys_basename}.entities" ]; then
+    entities_file="$MFVT_HOME/menus/${sys_basename}.entities"
+  fi
+
+  # TitleCase candidate
+  if [ ! -f "$entities_file" ]; then
+    local title=""
+    IFS='_'
+    for w in $sys_basename; do
+      title+="$(echo "${w:0:1}" | tr '[:lower:]' '[:upper:]')$(echo "${w:1}" | tr '[:upper:]' '[:lower:]')_"
+    done
+    unset IFS
+    title="${title%_}"
+    if [ -f "$MFVT_HOME/menus/${title}.entities" ]; then
+      entities_file="$MFVT_HOME/menus/${title}.entities"
+    fi
+  fi
+
+  # last resort: case-insensitive find
+  if [ ! -f "$entities_file" ]; then
+    local found="$(find "$MFVT_HOME/menus" -maxdepth 1 -type f -iname "${sys_basename}.entities" -print -quit 2>/dev/null || true)"
+    if [ -n "$found" ]; then
+      entities_file="$found"
+    fi
+  fi
+
+  # If still missing, offer to generate it
+  if [ ! -f "$entities_file" ]; then
+    echo "Entity list not found for system '$system'. Expected: $MFVT_HOME/menus/<system>.entities"
+    read -r -p "Generate entity lists now from menus/*.menu? [Y/n] " genans
+    case "$genans" in
+      ""|[yY]|[yY][eE][sS])
+        if [ -x "$MFVT_HOME/bin/generate_entity_lists.sh" ]; then
+          echo "Generating entity lists..."
+          MFVT_HOME="$MFVT_HOME" "$MFVT_HOME/bin/generate_entity_lists.sh" "$system"
+          # try locating again
+          found="$(find "$MFVT_HOME/menus" -maxdepth 1 -type f -iname "${sys_basename}.entities" -print -quit 2>/dev/null || true)"
+          if [ -n "$found" ]; then
+            entities_file="$found"
+          fi
+        else
+          echo "Generator script not available: $MFVT_HOME/bin/generate_entity_lists.sh"
+        fi
+        ;;
+      *)
+        echo "Cancelled generation. You can create ${sys_basename}.entities manually."
+        ;;
+    esac
+  fi
+
+  if [ ! -f "$entities_file" ]; then
+    echo "No entity list available for system '$system'."
+    pause
+    return
+  fi
+
+  # Read entities, dedupe, and prompt
+  local -a keys=()
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="$(echo "$line" | sed -e 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [ -z "$line" ] && continue
+    # skip comments
+    case "$line" in
+      \#*) continue ;;
+    esac
+    # add to list
+    keys+=("$line")
+  done <"$entities_file"
+
+  # Deduplicate preserving order
+  local -a uniq_keys=()
   for k in "${keys[@]}"; do
+    local seen=0
+    for u in "${uniq_keys[@]:-}"; do
+      if [ "$u" = "$k" ]; then seen=1; break; fi
+    done
+    if [ $seen -eq 0 ] && [ -n "$k" ]; then
+      uniq_keys+=("$k")
+    fi
+  done
+
+  if [ ${#uniq_keys[@]} -eq 0 ]; then
+    echo "Entity list file $entities_file contained no entries."
+    pause
+    return
+  fi
+
+  echo "Enter file paths for the following entities for system: $system (leave blank to keep current):"
+  for k in "${uniq_keys[@]}"; do
     local cur
-    cur="$(get_property "$file" "$k" "")"
+    cur="$(get_property "$propfile" "$k" "")"
     read -r -p "${k} (current: ${cur:-<none>}): " val
     if [ -n "$val" ]; then
-      set_property "$file" "$k" "$val"
+      set_property "$propfile" "$k" "$val"
       log_info "$logfile" "Set $k = $val"
     fi
   done
-  echo "File paths updated in $file"
+
+  echo "File paths updated in $propfile"
 }
 
 # Allow operator to view recent logs from the configured log directory
@@ -306,7 +363,7 @@ view_logs() {
     if [ "$choice" -eq 0 ]; then
       return
     fi
-    if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#files[@]}" ]; then
+    if [ "$choice" -lt 1 ] || [ "$choice" -gt "$[${#files[@]}]" ]; then
       echo "Choice out of range"
       pause
       return
