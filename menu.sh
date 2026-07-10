@@ -26,7 +26,7 @@ main_menu() {
     echo "3) Field Mapping (current: ${PROP_FIELD_MAPPING:-<none>})"
     echo "4) Default Formats"
     echo "5) Entity Validation (open selected system menu)"
-    echo "6) Run Validation (run last-selection)"
+    echo "6) Run Validation (run all configured entities)"
     echo "7) View Properties"
     echo "8) Set Input File Paths"
     echo "9) View Logs"
@@ -55,8 +55,8 @@ main_menu() {
         read -r -p "Run full validation for all entities now? [Y/n] " runans
         case "$runans" in
           ""|[yY]|[yY][eE][sS])
-            # call Java wrapper with only the properties file; Java reads all params from it
-            run_java "$propfile"
+            # call Java wrapper to run all validations; java.sh will pass logPath
+            run_java "runAll" "$propfile"
             ;;
           *)
             echo "Cancelled."
@@ -110,6 +110,74 @@ select_system_menu() {
     *) echo "Invalid"; pause ;;
   esac
   log_info "$logfile" "System set to $(get_property "$propfile" system)"
+
+  # Option A: when a system is selected, ensure validator.properties contains
+  # the input property keys used by that system's menu. Do not overwrite existing values.
+  local system_val
+  system_val="$(get_property "$propfile" system)"
+  local sys_basename="${system_val// /_}"
+  local sys_lower
+  sys_lower="$(echo "$sys_basename" | tr '[:upper:]' '[:lower:]')"
+
+  local fname="$MFVT_HOME/menus/${sys_lower}.menu"
+  if [ ! -f "$fname" ] && [ -f "$MFVT_HOME/menus/${sys_basename}.menu" ]; then
+    fname="$MFVT_HOME/menus/${sys_basename}.menu"
+  fi
+
+  local -a keys=()
+  if [ -f "$fname" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      line="$(echo "$line" | sed -e 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+      [ -z "$line" ] && continue
+      case "$line" in
+        \#*) continue ;;
+        \[*\]) continue ;;
+        *=*)
+          local key_part
+          key_part="${line%%=*}"
+          if [[ "$key_part" == *":"* ]]; then
+            local input_prop
+            input_prop="${key_part#*:}"
+            if [ -n "$input_prop" ]; then
+              keys+=("$input_prop")
+            fi
+          else
+            local inferred
+            inferred="$(infer_input_key_from_cmd "$key_part")"
+            if [ -n "$inferred" ]; then
+              keys+=("$inferred")
+            fi
+          fi
+          ;;
+        *) continue ;;
+      esac
+    done <"$fname"
+  else
+    keys=(marcBib marcHolding items patrons loans vendors)
+  fi
+
+  # Deduplicate keys while preserving order
+  local -a uniq_keys=()
+  for k in "${keys[@]}"; do
+    local found=0
+    for u in "${uniq_keys[@]:-}"; do
+      if [ "$u" = "$k" ]; then
+        found=1
+        break
+      fi
+    done
+    if [ $found -eq 0 ] && [ -n "$k" ]; then
+      uniq_keys+=("$k")
+    fi
+  done
+
+  # Add missing keys to the properties file with empty values (do not overwrite existing)
+  for k in "${uniq_keys[@]}"; do
+    if ! grep -qE "^\s*${k//./\\\.}\s*=" "$propfile"; then
+      echo "${k}=" >>"$propfile"
+      log_info "$logfile" "Added property $k= for system $system_val"
+    fi
+  done
 }
 
 edit_migration_form() {
@@ -164,91 +232,10 @@ set_property() {
 set_input_file_paths() {
   local file="$1"; shift
   local logfile="$1"; shift || true
-
-  # Attempt to derive the entity keys from the selected system's menu file
-  local system
-  system="$(get_property "$file" system)"
-  # if not set in properties, fall back to current runtime selection
-  if [ -z "$system" ]; then
-    system="$PROP_SYSTEM"
-  fi
-
-  if [ -z "$system" ]; then
-    echo "No system selected. Please select a system first." 
-    pause
-    return
-  fi
-
-  # Normalize system name to match menu filenames
-  local sys_basename="${system// /_}"
-  local sys_lower
-  sys_lower="$(echo "$sys_basename" | tr '[:upper:]' '[:lower:]')"
-
-  local fname="$MFVT_HOME/menus/${sys_lower}.menu"
-  if [ ! -f "$fname" ] && [ -f "$MFVT_HOME/menus/${sys_basename}.menu" ]; then
-    fname="$MFVT_HOME/menus/${sys_basename}.menu"
-  fi
-
-  local -a keys=()
-
-  if [ -f "$fname" ]; then
-    # Parse menu file for key[:inputProp]=Label entries and collect input props
-    while IFS= read -r line || [ -n "$line" ]; do
-      # Trim whitespace
-      line="$(echo "$line" | sed -e 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-      [ -z "$line" ] && continue
-      case "$line" in
-        \#*) continue ;;
-        \[*\]) continue ;;
-        *=*)
-          local key_part
-          key_part="${line%%=*}"
-          if [[ "$key_part" == *":"* ]]; then
-            local input_prop
-            input_prop="${key_part#*:}"
-            if [ -n "$input_prop" ]; then
-              keys+=("$input_prop")
-            fi
-          else
-            # No explicit input prop; infer from command name
-            local inferred
-            inferred="$(infer_input_key_from_cmd "$key_part")"
-            if [ -n "$inferred" ]; then
-              keys+=("$inferred")
-            fi
-          fi
-          ;;
-        *) continue ;;
-      esac
-    done <"$fname"
-  else
-    # fallback to a default set if no menu file is found
-    keys=(marcBib marcHolding items patrons loans vendors)
-  fi
-
-  # Deduplicate keys while preserving order
-  local -a uniq_keys=()
-  for k in "${keys[@]}"; do
-    local found=0
-    for u in "${uniq_keys[@]:-}"; do
-      if [ "$u" = "$k" ]; then
-        found=1
-        break
-      fi
-    done
-    if [ $found -eq 0 ] && [ -n "$k" ]; then
-      uniq_keys+=("$k")
-    fi
-  done
-
-  if [ ${#uniq_keys[@]} -eq 0 ]; then
-    echo "No entity input properties could be derived for system $system"
-    pause
-    return
-  fi
-
+  # List of property keys to prompt for (extend as needed)
+  local keys=(marcBib marcHolding items patrons loans vendors)
   echo "Enter file paths for the following entities (leave blank to keep current):"
-  for k in "${uniq_keys[@]}"; do
+  for k in "${keys[@]}"; do
     local cur
     cur="$(get_property "$file" "$k" "")"
     read -r -p "${k} (current: ${cur:-<none>}): " val
@@ -257,7 +244,6 @@ set_input_file_paths() {
       log_info "$logfile" "Set $k = $val"
     fi
   done
-
   echo "File paths updated in $file"
 }
 
@@ -315,7 +301,7 @@ view_logs() {
       return
     fi
 
-    # Viewing options: open once, follow, or back to list
+    # Offer viewing options: once (less), follow (tail -f), or back
     echo
     echo "Viewing options for $sel_file:"
     echo " 1) Open once"
@@ -349,7 +335,7 @@ view_logs() {
         ;;
     esac
 
-    # After viewing, let operator choose to return to the list or exit to main menu
+    # After viewing, ask whether to return to the file list or exit to main menu
     read -r -p "Return to log list? [Y/n] " again
     case "$again" in
       [nN]|[nN][oO]) return ;;
